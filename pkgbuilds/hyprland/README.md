@@ -9,3 +9,9 @@ Remove `sync: false` and `software-renderer.patch` in the same change once the s
 ## Output and VRR fixes
 
 `wl-output-global-grace.patch` keeps a removed `wl_output` global for five seconds before destroying it, as wlroots does. Without it, an output that comes and goes within a roundtrip, such as a dock's monitor flapping while its tunnel comes up, disconnects every client that has not bound it yet with "global wl_output (N) is unavailable". `monitor-rule-vrr.patch` makes a config reload apply a monitor rule's `vrr`; without it, changing only `vrr` is ignored until the next session. Neither is upstream yet. Rebase both with `--fuzz=0` on a version bump, and drop each once the selected release carries the fix.
+
+## X11 scale, and x86_64
+
+`xwayland-scale.patch` adds `xwayland:scale` ([ParkerrDev/xscale](https://github.com/ParkerrDev/xscale)): one scale that every X11 client renders at, so X11 apps are sharp and the size of their Wayland selves on every monitor, instead of upscaled and blurry, or tiny under `force_zero_scaling`. At `0`, the default, it changes nothing. It is not upstream yet. Apply it after the other patches, rebase it with `--fuzz=0` on a version bump, and drop it once the selected release carries the setting.
+
+For it to reach PCs, the recipe builds for `x86_64` as well as `aarch64`, so on both this Hyprland, with every patch here, takes the place of Arch's.
