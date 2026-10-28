@@ -12,7 +12,10 @@ scale as it is, or a number. 0, the default, changes nothing. Hyprland lays
 the X11 screen out at that scale and scales X11 windows down to their
 logical size itself, so a window is pixel for pixel on a monitor of that
 scale, downscaled with linear filtering on a lower one, and never upscaled.
-It needs nothing of Xwayland and changes no protocol.
+It needs nothing of Xwayland and changes no protocol. An X11 cursor is
+shown the same way, at its size divided by the X11 scale of the window under
+it, so an app that draws its cursor at the X11 scale gets one the size of
+Hyprland's own.
 
 The scale is laid out with the monitors, so a config reload that changes
 only xwayland:scale lays them out again, as a monitor change does.
@@ -581,6 +584,86 @@ index b1a547c..55f92e2 100644
      // add pos
      result += pMonitor->m_position;
  
+diff --git a/src/pointer/PointerManager.cpp b/src/pointer/PointerManager.cpp
+index e3e81af..216361a 100644
+--- a/src/pointer/PointerManager.cpp
++++ b/src/pointer/PointerManager.cpp
+@@ -22,6 +22,8 @@
+ #include "../helpers/Drm.hpp"
+ #include "../event/EventBus.hpp"
+ #include "../state/MonitorState.hpp"
++#include "../desktop/view/Window.hpp"
++#include "../xwayland/XWayland.hpp"
+ #include <climits>
+ #include <cstring>
+ #include <gbm.h>
+@@ -33,6 +35,22 @@
+ using namespace Hyprutils::Utils;
+ using namespace Pointer;
+ 
++// An X11 cursor is drawn in X11 pixels, at the size the X11 scale tells apps to draw it: with
++// xwayland:scale it is shown, as the X11 window under it is, at its size divided by that window's
++// X11 scale. Without xwayland:scale it is shown at its size, as before.
++static float x11CursorScale(SP<Desktop::View::CWLSurface> surf) {
++    static auto PXWLSCALE = CConfigValue<Config::FLOAT>("xwayland:scale");
++    if (*PXWLSCALE == 0.F || !surf || !surf->resource())
++        return 1.F;
++
++    if (!g_pXWayland || !g_pXWayland->m_server || surf->resource()->client() != g_pXWayland->m_server->m_xwaylandClient)
++        return 1.F;
++
++    const auto FOCUS   = Desktop::View::CWLSurface::fromResource(g_pSeatManager->m_state.pointerFocus.lock());
++    const auto PWINDOW = FOCUS ? Desktop::View::CWindow::fromView(FOCUS->view()) : nullptr;
++    return PWINDOW && PWINDOW->m_isX11 ? PWINDOW->x11PixelScale() : 1.F;
++}
++
+ UP<CPointerManager>& Pointer::mgr() {
+     static UP<CPointerManager> p = makeUnique<CPointerManager>();
+     return p;
+@@ -156,10 +174,12 @@ void CPointerManager::setCursorBuffer(SP<Aquamarine::IBuffer> buf, const Vector2
+ void CPointerManager::setCursorSurface(SP<Desktop::View::CWLSurface> surf, const Vector2D& hotspot) {
+     damageIfSoftware();
+ 
++    const float X11SCALE = x11CursorScale(surf);
++
+     if (surf == m_currentCursorImage.surface) {
+-        if (hotspot != m_currentCursorImage.hotspot || (surf && surf->resource() ? surf->resource()->m_current.scale : 1.F) != m_currentCursorImage.scale) {
+-            m_currentCursorImage.hotspot = hotspot;
+-            m_currentCursorImage.scale   = surf && surf->resource() ? surf->resource()->m_current.scale : 1.F;
++        if (hotspot / X11SCALE != m_currentCursorImage.hotspot || (surf && surf->resource() ? surf->resource()->m_current.scale * X11SCALE : 1.F) != m_currentCursorImage.scale) {
++            m_currentCursorImage.hotspot = hotspot / X11SCALE;
++            m_currentCursorImage.scale   = surf && surf->resource() ? surf->resource()->m_current.scale * X11SCALE : 1.F;
+             updateCursorBackend();
+             damageIfSoftware();
+             m_events.cursorChanged.emit();
+@@ -172,7 +192,7 @@ void CPointerManager::setCursorSurface(SP<Desktop::View::CWLSurface> surf, const
+ 
+     if (surf) {
+         m_currentCursorImage.surface = surf;
+-        m_currentCursorImage.scale   = surf->resource()->m_current.scale;
++        m_currentCursorImage.scale   = surf->resource()->m_current.scale * X11SCALE;
+ 
+         surf->resource()->map();
+ 
+@@ -180,7 +200,8 @@ void CPointerManager::setCursorSurface(SP<Desktop::View::CWLSurface> surf, const
+         m_currentCursorImage.commitSurface  = surf->resource()->m_events.commit.listen([this] {
+             damageIfSoftware();
+             m_currentCursorImage.size  = m_currentCursorImage.surface->resource()->m_current.texture ? m_currentCursorImage.surface->resource()->m_current.bufferSize : Vector2D{};
+-            m_currentCursorImage.scale = m_currentCursorImage.surface ? m_currentCursorImage.surface->resource()->m_current.scale : 1.F;
++            m_currentCursorImage.scale =
++                m_currentCursorImage.surface ? m_currentCursorImage.surface->resource()->m_current.scale * x11CursorScale(m_currentCursorImage.surface.lock()) : 1.F;
+             recheckEnteredOutputs();
+             updateCursorBackend();
+             damageIfSoftware();
+@@ -193,7 +214,7 @@ void CPointerManager::setCursorSurface(SP<Desktop::View::CWLSurface> surf, const
+         }
+     }
+ 
+-    m_currentCursorImage.hotspot = hotspot;
++    m_currentCursorImage.hotspot = hotspot / X11SCALE;
+ 
+     recheckEnteredOutputs();
+     updateCursorBackend();
 diff --git a/src/protocols/PointerConstraints.cpp b/src/protocols/PointerConstraints.cpp
 index 0cfefed..c494832 100644
 --- a/src/protocols/PointerConstraints.cpp
