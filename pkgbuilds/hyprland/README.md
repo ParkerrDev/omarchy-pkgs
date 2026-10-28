@@ -12,6 +12,6 @@ Remove `sync: false` and `software-renderer.patch` in the same change once the s
 
 ## X11 scale, and x86_64
 
-`xwayland-scale.patch` adds `xwayland:scale` ([ParkerrDev/xscale](https://github.com/ParkerrDev/xscale)): one scale that every X11 client renders at, so X11 apps are sharp and the size of their Wayland selves on every monitor, instead of upscaled and blurry, or tiny under `force_zero_scaling`. At `0`, the default, it changes nothing. It is not upstream yet. Apply it after the other patches, rebase it with `--fuzz=0` on a version bump, and drop it once the selected release carries the setting.
+`xwayland-scale.patch` adds `xwayland:scale` ([ParkerrDev/xscale](https://github.com/ParkerrDev/xscale)): one scale that every X11 client renders at, so X11 apps are sharp and the size of their Wayland selves on every monitor, instead of upscaled and blurry, or tiny under `force_zero_scaling`. Hyprland scales the X11 windows itself, so it works with Arch's `xorg-xwayland` and changes no protocol. At `0`, the default, it changes nothing. It is not upstream yet. Apply it after the other patches, rebase it with `--fuzz=0` on a version bump, and drop it once the selected release carries the setting.
 
 For it to reach PCs, the recipe builds for `x86_64` as well as `aarch64`, so on both this Hyprland, with every patch here, takes the place of Arch's.
